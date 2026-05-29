@@ -3,15 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Révision Formules Physique</title>
-    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
-    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <title>Moi j'aurais mon bac wola</title>
     <link rel="stylesheet" href="style.css">
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']]
+            },
+            svg: {
+                fontCache: 'global'
+            }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
 </head>
 <body>
     <!-- Menu Navigation -->
     <nav class="navbar">
-        <h1>📚 Physique - Révisions</h1>
+        <h1 style="display:flex;align-items:center;justify-content:center;gap:0.75rem;">Moi j'aurais mon bac wola <img src="gif.gif" alt="" style="height:2em;vertical-align:middle;"></h1>
         <div class="tabs">
             <button class="tab-btn active" data-tab="formules">Formules</button>
             <button class="tab-btn" data-tab="quiz">Quiz</button>
@@ -34,7 +44,8 @@
                     <option value="ondes">Ondes & Acoustique</option>
                     <option value="electricite">Électricité</option>
                     <option value="chimie">Chimie</option>
-                    <option value="geometrie">Géométrie</option>
+                    <option value="fluides">Fluides</option>
+                    <option value="nucleaire">Nucléaire</option>
                 </select>
             </div>
 
@@ -62,6 +73,17 @@
                 </div>
 
                 <div class="config-section">
+                    <label>Nombre de questions :</label>
+                    <select id="quiz-count">
+                        <option value="5">5 questions</option>
+                        <option value="10">10 questions</option>
+                        <option value="15">15 questions</option>
+                        <option value="20">20 questions</option>
+                        <option value="all">Toutes les questions</option>
+                    </select>
+                </div>
+
+                <div class="config-section">
                     <label>Sélectionner les thèmes :</label>
                     <div class="checkbox-group">
                         <label><input type="checkbox" class="theme-checkbox" value="mecanique" checked> Mécanique</label>
@@ -70,7 +92,8 @@
                         <label><input type="checkbox" class="theme-checkbox" value="ondes" checked> Ondes & Acoustique</label>
                         <label><input type="checkbox" class="theme-checkbox" value="electricite" checked> Électricité</label>
                         <label><input type="checkbox" class="theme-checkbox" value="chimie" checked> Chimie</label>
-                        <label><input type="checkbox" class="theme-checkbox" value="geometrie" checked> Géométrie</label>
+                        <label><input type="checkbox" class="theme-checkbox" value="fluides" checked> Fluides</label>
+                        <label><input type="checkbox" class="theme-checkbox" value="nucleaire" checked> Nucléaire</label>
                     </div>
                 </div>
 
@@ -97,8 +120,8 @@
 
                     <div class="quiz-actions">
                         <button id="validate-answer" class="btn-primary">Valider</button>
+                        <button id="skip-question" class="btn-skip">Skip</button>
                         <button id="next-question" class="btn-secondary" style="display: none;">Question Suivante</button>
-                        <button id="show-answer" class="btn-hint">Voir la réponse</button>
                     </div>
 
                     <div id="feedback"></div>
