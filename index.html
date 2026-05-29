@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Révision Formules Physique</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Menu Navigation -->
+    <nav class="navbar">
+        <h1>📚 Physique - Révisions</h1>
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="formules">Formules</button>
+            <button class="tab-btn" data-tab="quiz">Quiz</button>
+        </div>
+    </nav>
+
+    <!-- Partie 1: Formules -->
+    <div id="formules" class="tab-content active">
+        <div class="container">
+            <h2>Bibliothèque de Formules</h2>
+            
+            <!-- Filtres par thème -->
+            <div class="filter-section">
+                <label>Filtrer par thème :</label>
+                <select id="theme-filter">
+                    <option value="all">Tous les thèmes</option>
+                    <option value="mecanique">Mécanique</option>
+                    <option value="energie">Énergie</option>
+                    <option value="thermique">Thermique</option>
+                    <option value="ondes">Ondes & Acoustique</option>
+                    <option value="electricite">Électricité</option>
+                    <option value="chimie">Chimie</option>
+                    <option value="geometrie">Géométrie</option>
+                </select>
+            </div>
+
+            <!-- Liste des formules -->
+            <div id="formules-list"></div>
+        </div>
+    </div>
+
+    <!-- Partie 2: Quiz -->
+    <div id="quiz" class="tab-content">
+        <div class="container">
+            <h2>Quiz de Révision</h2>
+            
+            <!-- Configuration du quiz -->
+            <div id="quiz-config">
+                <h3>Configuration</h3>
+                
+                <div class="config-section">
+                    <label>Mode de quiz :</label>
+                    <select id="quiz-mode">
+                        <option value="full">Complet (Formule + Unités)</option>
+                        <option value="formula">Formule uniquement</option>
+                        <option value="units">Unités uniquement</option>
+                    </select>
+                </div>
+
+                <div class="config-section">
+                    <label>Sélectionner les thèmes :</label>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" class="theme-checkbox" value="mecanique" checked> Mécanique</label>
+                        <label><input type="checkbox" class="theme-checkbox" value="energie" checked> Énergie</label>
+                        <label><input type="checkbox" class="theme-checkbox" value="thermique" checked> Thermique</label>
+                        <label><input type="checkbox" class="theme-checkbox" value="ondes" checked> Ondes & Acoustique</label>
+                        <label><input type="checkbox" class="theme-checkbox" value="electricite" checked> Électricité</label>
+                        <label><input type="checkbox" class="theme-checkbox" value="chimie" checked> Chimie</label>
+                        <label><input type="checkbox" class="theme-checkbox" value="geometrie" checked> Géométrie</label>
+                    </div>
+                </div>
+
+                <button id="start-quiz" class="btn-primary">Commencer le Quiz</button>
+            </div>
+
+            <!-- Zone de quiz -->
+            <div id="quiz-area" style="display: none;">
+                <div class="quiz-header">
+                    <span id="question-counter"></span>
+                    <button id="quit-quiz" class="btn-secondary">Quitter</button>
+                </div>
+                
+                <div class="question-card">
+                    <p id="question-text"></p>
+                    
+                    <div id="formula-input-section">
+                        <label>Entrez la formule :</label>
+                        <input type="text" id="formula-input" placeholder="Ex: P = m * g">
+                        <small>Utilisez * pour multiplication, / pour division, ^ pour puissance</small>
+                    </div>
+
+                    <div id="units-table" style="display: none;"></div>
+
+                    <div class="quiz-actions">
+                        <button id="validate-answer" class="btn-primary">Valider</button>
+                        <button id="next-question" class="btn-secondary" style="display: none;">Question Suivante</button>
+                        <button id="show-answer" class="btn-hint">Voir la réponse</button>
+                    </div>
+
+                    <div id="feedback"></div>
+                </div>
+
+                <div id="quiz-results" style="display: none;">
+                    <h3>Résultats</h3>
+                    <p id="score-text"></p>
+                    <button id="restart-quiz" class="btn-primary">Recommencer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="data.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
