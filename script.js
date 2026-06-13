@@ -5,10 +5,35 @@ let score = 0;
 let quizMode = 'full';
 let totalQuestions = 0;
 
+// Helper pour obtenir la valeur du MathField (compatible avec MathLive)
+function getFormulaInputValue() {
+    const input = document.getElementById('formula-input');
+    if (!input) return '';
+    // MathLive math-field : utiliser .getValue() ou .value en LaTeX
+    if (input.tagName === 'MATH-FIELD') {
+        return (input.getValue && input.getValue('latex')) || input.value || '';
+    }
+    return input.value || '';
+}
+
+// Helper pour définir la valeur du MathField
+function setFormulaInputValue(latex) {
+    const input = document.getElementById('formula-input');
+    if (!input) return;
+    if (input.tagName === 'MATH-FIELD') {
+        if (input.setValue) {
+            input.setValue(latex, 'latex');
+        }
+    } else {
+        input.value = latex;
+    }
+}
+
 // Initialisation au chargement de la page
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Page chargée, initialisation...');
     console.log('Nombre de formules:', formulesData.length);
+    console.log('Nombre de questions de cours:', questionsCoursDataWithConversions.length);
     
     initTooltipSystem();
     initTabs();
@@ -94,7 +119,9 @@ function createFormulaCard(formula) {
         'electricite': 'Électricité',
         'chimie': 'Chimie',
         'fluides': 'Fluides',
-        'nucleaire': 'Nucléaire'
+        'nucleaire': 'Nucléaire',
+        'geometrie': 'Géométrie',
+        'conversions': 'Conversions'
     };
     
     const header = document.createElement('div');
@@ -135,8 +162,6 @@ function createFormulaCard(formula) {
     return card;
 }
 
-// Filtre de thème (déplacé dans DOMContentLoaded)
-
 // QUIZ
 function initQuiz() {
     const startBtn = document.getElementById('start-quiz');
@@ -173,9 +198,12 @@ function initQuiz() {
 function startQuiz() {
     console.log('Démarrage quiz');
     
+    quizMode = document.getElementById('quiz-mode').value;
+    
     const selectedThemes = Array.from(document.querySelectorAll('.theme-checkbox:checked'))
         .map(cb => cb.value);
     
+    console.log('Mode:', quizMode);
     console.log('Thèmes sélectionnés:', selectedThemes);
     
     if (selectedThemes.length === 0) {
@@ -183,12 +211,15 @@ function startQuiz() {
         return;
     }
     
-    let availableQuestions = formulesData.filter(f => selectedThemes.includes(f.theme));
+    // 🆕 Choisir la source de données selon le mode
+    let sourceData = (quizMode === 'cours') ? questionsCoursDataWithConversions : formulesData;
+    
+    let availableQuestions = sourceData.filter(f => selectedThemes.includes(f.theme));
     
     console.log('Questions disponibles:', availableQuestions.length);
     
     if (availableQuestions.length === 0) {
-        alert('Aucune formule disponible pour les thèmes sélectionnés.');
+        alert('Aucune question disponible pour les thèmes sélectionnés.');
         return;
     }
     
@@ -205,7 +236,6 @@ function startQuiz() {
     }
     
     totalQuestions = currentQuestions.length;
-    quizMode = document.getElementById('quiz-mode').value;
     currentQuestionIndex = 0;
     score = 0;
     
@@ -230,7 +260,7 @@ function loadQuestion() {
     
     document.getElementById('question-text').textContent = question.question;
     
-    document.getElementById('formula-input').value = '';
+    setFormulaInputValue('');
     document.getElementById('units-table').innerHTML = '';
     document.getElementById('units-table').style.display = 'none';
     
@@ -243,15 +273,21 @@ function loadQuestion() {
     document.getElementById('validate-answer').style.display = 'inline-block';
     document.getElementById('skip-question').style.display = 'inline-block';
     
-    if (quizMode === 'units') {
+    // 🆕 Adaptation selon le mode
+    if (quizMode === 'cours') {
+        // Mode cours : juste un champ texte
+        document.getElementById('formula-input-section').style.display = 'block';
+        document.getElementById('units-table').style.display = 'none';
+    } else if (quizMode === 'units') {
+        // Mode unités seul
         document.getElementById('formula-input-section').style.display = 'none';
         displayUnitsTable(question, true);
     } else if (quizMode === 'full') {
+        // Mode complet : formule + unités
         document.getElementById('formula-input-section').style.display = 'block';
-        // Afficher le tableau des variables de la question pour que
-        // l'utilisateur puisse remplir descriptions et unités
         displayUnitsTable(question, false);
     } else {
+        // Mode formule seule
         document.getElementById('formula-input-section').style.display = 'block';
         document.getElementById('units-table').style.display = 'none';
     }
@@ -264,10 +300,7 @@ function loadQuestion() {
 }
 
 function handleFormulaInput(e) {
-    if (quizMode === 'units') return;
-    // En mode full, le tableau des unités est affiché depuis les variables
-    // de la question courante, pas depuis la saisie utilisateur
-    // → rien à faire ici, le tableau est déjà affiché dans loadQuestion
+    if (quizMode === 'units' || quizMode === 'cours') return;
 }
 
 function extractVariables(formula) {
@@ -349,51 +382,65 @@ function buildVariablesHTML(question) {
 }
 
 function validateAnswer() {
-    console.log('Validation réponse');
+    console.log('Affichage de la correction');
 
     const question = currentQuestions[currentQuestionIndex];
     const feedback = document.getElementById('feedback');
-
-    let formulaCorrect = true;
-    let unitsCorrect = true;
     let feedbackHTML = '';
 
-    if (quizMode === 'formula' || quizMode === 'full') {
-        const userFormula = document.getElementById('formula-input').value.trim();
-        formulaCorrect = checkFormula(userFormula, question.formula);
-    }
+    if (quizMode === 'cours') {
+        const userAnswer = getFormulaInputValue().trim();
 
-    if (quizMode === 'units' || quizMode === 'full') {
-        unitsCorrect = checkUnits(question);
-    }
+        feedbackHTML += '<div style="margin-bottom: 1rem;">';
+        feedbackHTML += '<strong style="color: #a1a1aa;">Votre reponse :</strong>';
+        feedbackHTML += '<div class="user-answer-box">';
+        feedbackHTML += '<code style="color: #e4e4e7;">' + escapeHtml(userAnswer || '(vide)') + '</code>';
+        feedbackHTML += '</div>';
+        feedbackHTML += '</div>';
 
-    const isCorrect = formulaCorrect && unitsCorrect;
+        feedbackHTML += '<div style="margin-bottom: 1rem;">';
+        feedbackHTML += '<strong style="color: #4caf50;">Reponse attendue :</strong>';
+        feedbackHTML += '<div class="correction-box">';
+        feedbackHTML += '<code style="color: #e4e4e7;">' + escapeHtml(question.reponse) + '</code>';
+        feedbackHTML += '</div>';
+        feedbackHTML += '</div>';
 
-    if (isCorrect) {
-        score++;
-        feedback.className = 'correct show';
-        feedbackHTML = '<strong>✓ Correct ! Bravo !</strong><br><br>';
     } else {
-        feedback.className = 'incorrect show';
-        feedbackHTML = '<strong>✗ Incorrect.</strong><br><br>';
-        if (!formulaCorrect) {
-            feedbackHTML += `<strong>La bonne formule :</strong><br>$$${question.formula}$$<br><br>`;
+        const userFormula = getFormulaInputValue().trim();
+
+        if (quizMode !== 'units' && userFormula) {
+            feedbackHTML += '<div style="margin-bottom: 1rem;">';
+            feedbackHTML += '<strong style="color: #a1a1aa;">Votre reponse :</strong>';
+            feedbackHTML += '<div class="user-answer-box">$$' + userFormula + '$$</div>';
+            feedbackHTML += '</div>';
         }
-        if (!unitsCorrect) {
-            feedbackHTML += '<strong>Certaines descriptions ou unités étaient vides ou incorrectes.</strong><br><br>';
-        }
+
+        feedbackHTML += '<div style="margin-bottom: 1rem;">';
+        feedbackHTML += '<strong style="color: #4caf50;">Formule correcte :</strong>';
+        feedbackHTML += '<div class="correction-box">$$' + question.formula + '$$</div>';
+        feedbackHTML += '</div>';
+
+        feedbackHTML += '<div style="margin-bottom: 1rem;">';
+        feedbackHTML += buildVariablesHTML(question);
+        feedbackHTML += '</div>';
     }
 
-    // Toujours afficher la correction complète
-    feedbackHTML += '<strong>📋 Correction complète :</strong><br><br>';
-    feedbackHTML += `<strong>Formule :</strong> $$${question.formula}$$<br><br>`;
-    feedbackHTML += buildVariablesHTML(question);
+    feedbackHTML += '<div class="self-eval-container">';
+    feedbackHTML += '<button class="self-eval-btn full" onclick="recordScore(1)">1 point</button>';
+    feedbackHTML += '<button class="self-eval-btn half" onclick="recordScore(0.5)">0.5 point</button>';
+    feedbackHTML += '<button class="self-eval-btn zero" onclick="recordScore(0)">0 point</button>';
+    feedbackHTML += '</div>';
 
+    feedback.className = 'show';
+    feedback.style.background = 'rgba(108, 99, 255, 0.05)';
+    feedback.style.border = '1px solid rgba(108, 99, 255, 0.2)';
+    feedback.style.borderRadius = '8px';
+    feedback.style.padding = '1.5rem';
     feedback.innerHTML = feedbackHTML;
 
     document.getElementById('validate-answer').style.display = 'none';
     document.getElementById('skip-question').style.display = 'none';
-    document.getElementById('next-question').style.display = 'inline-block';
+    document.getElementById('next-question').style.display = 'none';
 
     setTimeout(() => {
         if (window.MathJax) {
@@ -402,16 +449,38 @@ function validateAnswer() {
     }, 150);
 }
 
+function recordScore(points) {
+    score += points;
+    console.log('Score +' + points + ' | Total: ' + score);
+    currentQuestionIndex++;
+    loadQuestion();
+}
+
+
+
+
 function skipQuestion() {
     const question = currentQuestions[currentQuestionIndex];
     const feedback = document.getElementById('feedback');
 
-    // FIX : skip = mauvaise réponse, on ne touche pas au score
-    feedback.className = 'incorrect show';
-    let feedbackHTML = `<strong>❌ Question passée — 0 point</strong><br><br>`;
-    feedbackHTML += `<strong>La bonne formule :</strong><br>$$${question.formula}$$<br><br>`;
-    feedbackHTML += buildVariablesHTML(question);
+    let feedbackHTML = '<strong style="color: #f44336;">Question passee</strong><br><br>';
 
+    if (quizMode === 'cours') {
+        feedbackHTML += '<strong style="color: #4caf50;">Reponse attendue :</strong>';
+        feedbackHTML += '<div class="correction-box">';
+        feedbackHTML += '<code style="color: #e4e4e7;">' + escapeHtml(question.reponse) + '</code>';
+        feedbackHTML += '</div>';
+    } else {
+        feedbackHTML += '<strong style="color: #4caf50;">Formule correcte :</strong>';
+        feedbackHTML += '<div class="correction-box">$$' + question.formula + '$$</div>';
+        feedbackHTML += buildVariablesHTML(question);
+    }
+
+    feedback.className = 'show';
+    feedback.style.background = 'rgba(244, 67, 54, 0.05)';
+    feedback.style.border = '1px solid rgba(244, 67, 54, 0.2)';
+    feedback.style.borderRadius = '8px';
+    feedback.style.padding = '1.5rem';
     feedback.innerHTML = feedbackHTML;
 
     document.getElementById('validate-answer').style.display = 'none';
@@ -423,6 +492,47 @@ function skipQuestion() {
             MathJax.typesetPromise([feedback]);
         }
     }, 100);
+}
+
+// 🆕 Fonction de validation des réponses de cours
+function checkCoursAnswer(userAnswer, question) {
+    if (!userAnswer || userAnswer.length === 0) return false;
+    
+    const normalize = (str) => {
+        return str.toLowerCase()
+            .trim()
+            .replace(/\s+/g, ' ')
+            .replace(/[àáâãäå]/g, 'a')
+            .replace(/[èéêë]/g, 'e')
+            .replace(/[ìíîï]/g, 'i')
+            .replace(/[òóôõö]/g, 'o')
+            .replace(/[ùúûü]/g, 'u')
+            .replace(/[ç]/g, 'c')
+            .replace(/[×*]/g, '')
+            .replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (m) => '0123456789'['₀₁₂₃₄₅₆₇₈₉'.indexOf(m)])
+            .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (m) => '0123456789'['⁰¹²³⁴⁵⁶⁷⁸⁹'.indexOf(m)])
+            .replace(/[^a-z0-9.,+\-=>/()]/g, '');
+    };
+    
+    const normalizedUser = normalize(userAnswer);
+    const normalizedCorrect = normalize(question.reponse);
+    
+    // Vérification exacte
+    if (normalizedUser === normalizedCorrect) return true;
+    
+    // Vérification des réponses acceptées
+    if (question.acceptedAnswers) {
+        for (let accepted of question.acceptedAnswers) {
+            if (normalize(accepted) === normalizedUser) return true;
+        }
+    }
+    
+    // Vérification partielle (au moins 80% de similarité)
+    if (normalizedUser.length > 5 && normalizedCorrect.includes(normalizedUser)) {
+        return true;
+    }
+    
+    return false;
 }
 
 function checkFormula(userFormula, correctFormula) {
@@ -472,12 +582,10 @@ function checkFormula(userFormula, correctFormula) {
 
 function checkUnits(question) {
     // Vérifie que tous les champs sont remplis (non vides)
-    // La vraie correction est affichée dans le feedback de toute façon
     const descInputs = document.querySelectorAll('.var-desc');
     const unitInputs = document.querySelectorAll('.var-unit');
 
     if (descInputs.length === 0 && unitInputs.length === 0) {
-        // Aucun tableau affiché → on ne pénalise pas
         return true;
     }
 
@@ -503,24 +611,23 @@ function showResults() {
     document.querySelector('.quiz-header').style.display = 'none';
     document.querySelector('.question-card').style.display = 'none';
     document.getElementById('quiz-results').style.display = 'block';
-    
+
     const percentage = Math.round((score / totalQuestions) * 100);
-    
+
     let message = '';
     if (percentage >= 90) {
-        message = 'Excellent ! Tu maîtrises parfaitement !';
+        message = 'Excellent ! Tu maitrises parfaitement !';
     } else if (percentage >= 70) {
-        message = 'Très bien ! Continue comme ça !';
+        message = 'Tres bien ! Continue comme ca !';
     } else if (percentage >= 50) {
-        message = 'Pas mal ! Il faut encore réviser un peu.';
+        message = 'Pas mal ! Il faut encore reviser un peu.';
     } else {
-        message = 'Il faut réviser davantage !';
+        message = 'Il faut reviser davantage !';
     }
-    
-    document.getElementById('score-text').innerHTML = `
-        Score : ${score} / ${totalQuestions} (${percentage}%)<br><br>
-        ${message}
-    `;
+
+    document.getElementById('score-text').innerHTML =
+        'Score : ' + score + ' / ' + totalQuestions + ' (' + percentage + '%)<br><br>' +
+        message;
 }
 
 function quitQuiz() {
@@ -540,18 +647,16 @@ function resetQuiz() {
     document.querySelector('.question-card').style.display = 'block';
     document.getElementById('quiz-results').style.display = 'none';
 
-    // FIX : nettoyer le feedback complètement
     const feedback = document.getElementById('feedback');
     feedback.className = '';
     feedback.removeAttribute('style');
     feedback.innerHTML = '';
 
-    // FIX : nettoyer le tableau des unités
     const unitsTable = document.getElementById('units-table');
     unitsTable.innerHTML = '';
     unitsTable.style.display = 'none';
 
-    document.getElementById('formula-input').value = '';
+    setFormulaInputValue('');
 
     currentQuestions = [];
     currentQuestionIndex = 0;
@@ -567,6 +672,7 @@ function shuffleArray(array) {
     }
     return newArray;
 }
+
 // ==============================================================
 // SYSTÈME TOOLTIP SVG SUR LES FORMULES
 // ==============================================================
@@ -655,31 +761,24 @@ function refreshTooltips() {
         var vmap = buildVarMapSVG(fdata);
 
         // Trouver les groupes <g data-mml-node="mi"> = variables
-        // et <g data-mml-node="msub"> = variables avec indice
-        // et <g data-mml-node="mover"> = Delta x, vec x
         var groups = svg.querySelectorAll('g[data-mml-node]');
 
         groups.forEach(function(g) {
             var nodeType = g.getAttribute('data-mml-node');
 
-            // On ne s'intéresse qu'aux mi, msub, msup, msubsup, mover, mrow contenant des variables
             if (['mi', 'msub', 'msup', 'msubsup', 'mover'].indexOf(nodeType) === -1) return;
 
-            // Extraire le texte de ce groupe via les data-c des <use>
             var gText = extractTextFromG(g);
             if (!gText) return;
 
-            // Chercher un match
             var matched = matchVarSVG(gText, nodeType, g, vmap);
             if (!matched) return;
 
-            // Vérifier qu'on n'a pas déjà attaché le tooltip
             if (g.getAttribute('data-tip-attached')) return;
             g.setAttribute('data-tip-attached', '1');
 
             g.style.cursor = 'help';
 
-            // Ajouter un rectangle invisible pour agrandir la hitbox
             try {
                 var bbox = g.getBBox();
                 var pad = 8;
@@ -723,68 +822,55 @@ function extractTextFromG(g) {
 
 function buildVarMapSVG(fdata) {
     var map = {};
-    // Pour chaque variable, on crée des clés de matching
     fdata.variables.forEach(function(v) {
         var sym = v.symbol;
 
-        // 1. Lettre simple : "P", "m", "v", etc.
         if (sym.match(/^[A-Za-z]$/)) {
             map[sym] = v;
             return;
         }
 
-        // 2. Indice simple : "P_j", "E_c", "U_1", "Q_v", etc.
         var subMatch = sym.match(/^([A-Za-z])_\{?([^}\\]*)\}?$/);
         if (subMatch) {
             map['sub:' + subMatch[1] + subMatch[2]] = v;
             return;
         }
 
-        // 3. Indice avec \text : "P_{\text{méc}}", "Q_{\text{élec}}", etc.
         var textSubMatch = sym.match(/^([A-Za-z])_\{\\text\{([^}]*)\}\}$/);
         if (textSubMatch) {
             map['sub:' + textSubMatch[1] + textSubMatch[2]] = v;
             return;
         }
 
-        // 4. Indice composé : "R_{\text{th}}", "P_{\text{hyd}}"
-        // déjà couvert par #3
-
-        // 5. Lettre grecque seule : "\omega", "\theta", "\rho", etc.
         var greekMatch = sym.match(/^\\([a-zA-Z]+)$/);
         if (greekMatch) {
             map['greek:' + greekMatch[1]] = v;
             return;
         }
 
-        // 6. Delta + lettre : "\Delta t", "\Delta P", "\Delta m"
         var deltaMatch = sym.match(/^\\Delta\s+([A-Za-z])$/);
         if (deltaMatch) {
             map['delta:' + deltaMatch[1]] = v;
             return;
         }
 
-        // 7. Fonctions trig : "\cos(\phi)", "\sin(\phi)"
         var trigMatch = sym.match(/^\\(cos|sin|tan|log|ln)/);
         if (trigMatch) {
             map['func:' + sym] = v;
             return;
         }
 
-        // 8. Vec : "\vec{F}", "\vec{a}"
         var vecMatch = sym.match(/^\\vec\{([A-Za-z])\}$/);
         if (vecMatch) {
             map['vec:' + vecMatch[1]] = v;
             return;
         }
 
-        // 9. Sum vec : "\sum \vec{F}"
         if (sym.indexOf('\\sum') !== -1) {
             map['sum:' + sym] = v;
             return;
         }
 
-        // 10. Complexe : stocker tel quel
         map['raw:' + sym] = v;
     });
 
@@ -792,12 +878,10 @@ function buildVarMapSVG(fdata) {
 }
 
 function matchVarSVG(gText, nodeType, gEl, vmap) {
-    // Match direct par lettre simple
     if (gText.length === 1 && vmap[gText]) {
         return vmap[gText];
     }
 
-    // Match par indice : nodeType=msub -> parent contient base + indice
     if (nodeType === 'msub') {
         var children = gEl.querySelectorAll(':scope > g[data-mml-node]');
         if (children.length >= 2) {
@@ -805,7 +889,6 @@ function matchVarSVG(gText, nodeType, gEl, vmap) {
             var sub = extractTextFromG(children[1]);
             var key = 'sub:' + base + sub;
             if (vmap[key]) return vmap[key];
-            // Essayer avec les noms mappés
             for (var k in vmap) {
                 if (k.indexOf('sub:') === 0 && k.indexOf(base) !== -1) {
                     return vmap[k];
@@ -814,7 +897,6 @@ function matchVarSVG(gText, nodeType, gEl, vmap) {
         }
     }
 
-    // Match par lettre grecque
     var greekNames = ['alpha','beta','gamma','delta','epsilon','zeta','eta',
         'theta','iota','kappa','lambda','mu','nu','xi','pi','rho','sigma',
         'tau','upsilon','phi','phi2','chi','psi','omega',
@@ -824,14 +906,12 @@ function matchVarSVG(gText, nodeType, gEl, vmap) {
         if (gText === greekNames[gi]) {
             var gk = 'greek:' + greekNames[gi];
             if (vmap[gk]) return vmap[gk];
-            // Essayer variantes
             if (greekNames[gi] === 'phi2') {
                 if (vmap['greek:phi']) return vmap['greek:phi'];
             }
         }
     }
 
-    // Match Delta + lettre via mover
     if (nodeType === 'mover' || nodeType === 'mi') {
         for (var dk in vmap) {
             if (dk.indexOf('delta:') === 0) {
@@ -843,7 +923,6 @@ function matchVarSVG(gText, nodeType, gEl, vmap) {
         }
     }
 
-    // Match fonctions : cos, sin, etc.
     if (gText === 'cos' || gText === 'sin' || gText === 'tan' || gText === 'log' || gText === 'ln') {
         for (var fk in vmap) {
             if (fk.indexOf('func:') === 0 && fk.indexOf(gText) !== -1) {
@@ -852,7 +931,6 @@ function matchVarSVG(gText, nodeType, gEl, vmap) {
         }
     }
 
-    // Match sum
     if (gText === 'sum' || gText.indexOf('sum') !== -1) {
         for (var sk in vmap) {
             if (sk.indexOf('sum:') === 0) return vmap[sk];

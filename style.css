@@ -501,3 +501,73 @@ body {
         width: 100%;
     }
 }
+
+/* MathLive / math-field tweaks for dark theme */
+math-field {
+    display: block !important;
+    width: 100% !important;
+    min-height: 40px !important;
+    padding: 0.7rem !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    background: rgba(37, 37, 77, 0.9) !important;
+    color: #e4e4e7 !important;
+    caret-color: #e4e4e7 !important;
+    -webkit-text-fill-color: #e4e4e7 !important;
+    font-size: 1rem !important;
+}
+
+/* MathLive CSS variables (if supported) */
+math-field {
+    --text-color: #e4e4e7;
+    --background-color: rgba(37, 37, 77, 0.9);
+    --selection-background-color: rgba(255, 255, 255, 0.06);
+    --selection-text-color: #e4e4e7;
+    --caret-color: #e4e4e7;
+}
+
+/* Force all internal MathLive elements to dark */
+math-field::part(content),
+math-field::part(editor),
+math-field::part(field),
+math-field::part(cursor) {
+    background: transparent !important;
+    color: #e4e4e7 !important;
+}
+
+/* Shadow DOM penetration via wildcard */
+math-field, math-field * {
+    color: #e4e4e7 !important;
+    background: transparent !important;
+    caret-color: #e4e4e7 !important;
+}
+
+/* Softer selection inside the math-field - VERY DARK */
+math-field ::selection,
+math-field *::selection {
+    background: rgba(0, 0, 0, 0.3) !important;
+    color: #e4e4e7 !important;
+}
+
+/* Target known MathLive/MathQuill classes */
+.ML__root, .ML__textarea, .ML__mathfield,
+.mq-root-block, .mq-editable-field, .mq-focused,
+.mq-math-mode, .mq-text-mode {
+    background: transparent !important;
+    color: #e4e4e7 !important;
+}
+
+/* Force MathLive background to stay dark no matter what */
+math-field {
+    background: rgba(37, 37, 77, 0.95) !important;
+    --text-color: #e4e4e7 !important;
+    --background-color: rgba(37, 37, 77, 0.95) !important;
+    --selection-background-color: rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Disable any light backgrounds inside MathLive */
+math-field::part(field),
+math-field::part(editor),
+math-field::part(content) {
+    background: rgba(37, 37, 77, 0.95) !important;
+}
