@@ -373,6 +373,7 @@
         <div class="tabs">
             <button class="tab-btn active" data-tab="formules">Formules</button>
             <button class="tab-btn" data-tab="quiz">Quiz</button>
+            <button class="tab-btn" data-tab="stats">Stats</button>
         </div>
     </nav>
 
@@ -547,6 +548,12 @@
                         </div>
                     </div>
                 </div>
+                <div class="config-section" style="margin-top:0.6rem; display:flex; gap:0.6rem; align-items:center;">
+                    <label style="margin:0;">Réviser les erreurs :</label>
+                    <input type="checkbox" id="review-errors-toggle" style="width:1.1rem;height:1.1rem;" />
+                    <label for="review-errors-percent" style="margin:0 0 0 0.4rem;color:#a1a1aa;font-size:0.9rem;">Pourcentage d'erreurs à injecter :</label>
+                    <input type="number" id="review-errors-percent" min="0" max="100" value="20" style="width:5.2rem;padding:0.25rem;border-radius:4px;border:1px solid #444;background:rgba(37,37,77,0.9);color:#e4e4e7;" />
+                </div>
 
             <button id="start-quiz" class="btn-primary">Commencer le Quiz</button>
             </div>
@@ -562,24 +569,26 @@
                     <p id="question-text" style="font-size: 1.1rem; font-weight: 500; margin-bottom: 1.5rem;"></p>
                     
                     <div id="formula-input-section">
-                        <label>Entrez votre réponse (utilisez / pour fraction, ^ pour puissance) :</label>
-                        <math-field id="formula-input" style="border: 1px solid #444; padding: 0.5rem; border-radius: 4px; min-height: 40px; background: rgba(255,255,255,0.03);"></math-field>
-                        <!-- Mobile fallback native input (visible only on small screens) -->
-                        <input type="text" id="mobile-native-input" placeholder="Tapez ici (mobile)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="display:none; margin-top:0.5rem; width:100%; padding:0.6rem; border-radius:6px; border:1px solid #444; background: rgba(37,37,77,0.9); color: #e4e4e7;">
-                        <small style="color: #a1a1aa; display: block; margin-top: 0.5rem;">
-                            Tapez / pour créer une fraction, ^ pour une puissance. Naviguez avec les flèches ↑↓←→
-                        </small>
+                        <div style="display: flex; gap: 0.5rem; align-items: flex-start;">
+                            <input type="text" id="formula-input" placeholder="Entrez votre réponse..." style="flex: 1; padding: 0.6rem; border-radius: 6px; border: 1px solid #444; background: rgba(37,37,77,0.9); color: #e4e4e7; font-size: 1rem;">
+                            <button id="toggle-math-mode" style="padding: 0.6rem 0.8rem; background: #333; color: #a1a1aa; border: 1px solid #444; border-radius: 4px; cursor: pointer; font-size: 0.8rem; white-space: nowrap; transition: all 0.2s;">Math</button>
+                            <small id="math-help" style="color: #a1a1aa; display: none; margin-top: 0.5rem; margin-left:0.6rem;">Cliquez sur "Math" pour accéder à l'éditeur LaTeX avancé</small>
+                        </div>
                     </div>
 
                     <div id="units-table" style="display: none;"></div>
 
                     <div class="quiz-actions">
                         <button id="validate-answer" class="btn-primary">Valider</button>
-                        <button id="skip-question" class="btn-skip">Passer</button>
-                        <button id="next-question" class="btn-secondary" style="display: none;">Question Suivante</button>
+                        <button id="skip-question" class="btn-skip">Passer (0 points)</button>
                     </div>
 
                     <div id="feedback"></div>
+
+                    <!-- Bouton Suivant placé sous la correction -->
+                    <div style="text-align:center;margin-top:0.8rem;">
+                        <button id="next-question" class="btn-primary" style="display:none;max-width:720px;width:100%;">Suivant</button>
+                    </div>
                 </div>
 
                 <div id="quiz-results" style="display: none;">
@@ -591,6 +600,77 @@
         </div>
     </div>
 
+    <!-- Partie 3: Stats -->
+    <div id="stats" class="tab-content">
+        <div class="container">
+            <h2>Statistiques & Progression</h2>
+
+            <!-- Vue d'ensemble -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total-quizzes">0</div>
+                    <div class="stat-label">Quiz joués</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total-questions">0</div>
+                    <div class="stat-label">Questions répondues</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-global-rate">0%</div>
+                    <div class="stat-label">Taux de réussite global</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-errors-pending">0</div>
+                    <div class="stat-label">Erreurs à réviser</div>
+                </div>
+            </div>
+
+            <!-- Graphiques -->
+            <div class="charts-section">
+                <div class="chart-container">
+                    <h3>Évolution du taux de réussite</h3>
+                    <canvas id="chart-evolution"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>Réussite par thème</h3>
+                    <canvas id="chart-by-theme"></canvas>
+                </div>
+            </div>
+
+            
+
+            <!-- Erreurs à réviser -->
+            <div class="errors-section">
+                <h3>Erreurs récentes</h3>
+                <p class="errors-desc">Ces questions ont été ratées précédemment. Elles réapparaîtront dans vos prochains quiz avec un badge "Ancienne erreur".</p>
+                <div id="errors-collapsible">
+                    <button id="toggle-errors" class="btn-secondary" style="display:block;margin:0 auto 0.6rem;">Afficher / Masquer les erreurs</button>
+                    <div id="errors-list" style="display:none; max-height:320px; overflow:auto; padding-top:0.4rem;"></div>
+                </div>
+            </div>
+
+            <!-- Historique sessions -->
+            <div class="history-section">
+                <h3>Historique des sessions</h3>
+                <div id="history-list"></div>
+            </div>
+            <!-- Suppression / gestion des données -->
+            <div class="data-management-section" style="margin-top:1.2rem;">
+                <h3>Gérer les données</h3>
+                <div style="display:flex;gap:0.6rem;align-items:center;margin-top:0.5rem;">
+                    <select id="delete-data-select" style="flex:0 0 240px;padding:0.4rem;border-radius:6px;border:1px solid #444;background:rgba(37,37,77,0.9);color:#e4e4e7;">
+                        <option value="sessions">Supprimer les sessions (historique)</option>
+                        <option value="errors">Supprimer les erreurs enregistrées</option>
+                        <option value="all">Réinitialiser toutes les statistiques</option>
+                    </select>
+                    <button id="delete-data-btn" class="btn-skip">Supprimer la sélection</button>
+                </div>
+                <p style="color:#a1a1aa;margin-top:0.6rem;font-size:0.9rem;">Le bouton supprime uniquement les données locales (localStorage). Les erreurs ne seront plus injectées si vous les supprimez.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="data.js"></script>
     <script src="script.js"></script>
 

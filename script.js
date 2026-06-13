@@ -39,6 +39,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initTabs();
     renderFormulas('all');
     initQuiz();
+    initMathModeToggle();
 
     // FIX : filtre thème dans DOMContentLoaded
     const themeFilter = document.getElementById('theme-filter');
@@ -72,6 +73,43 @@ function initTabs() {
             }, 100);
         });
     });
+}
+
+// Global custom confirmation box (reusable)
+function showConfirmBox(message, onYes, onNo, opts) {
+    // Prevent duplicates
+    if (document.getElementById('global-confirm-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'global-confirm-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:99999;';
+
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--bg-card);color:var(--text-light);padding:1rem 1.1rem;border-radius:8px;max-width:560px;width:92%;border:1px solid var(--border);text-align:left;';
+    const p = document.createElement('div');
+    p.style.cssText = 'margin-bottom:0.8rem;color:#cfcfe8;font-size:1rem;';
+    p.textContent = message;
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:0.6rem;justify-content:flex-end;';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = (opts && opts.noText) ? opts.noText : 'Annuler';
+    cancelBtn.className = 'btn-secondary';
+    const okBtn = document.createElement('button');
+    okBtn.textContent = (opts && opts.yesText) ? opts.yesText : 'OK';
+    okBtn.className = 'btn-primary';
+    okBtn.style.cssText = 'min-width:88px;';
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(okBtn);
+    box.appendChild(p);
+    box.appendChild(btnRow);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    function clean() { try { overlay.remove(); } catch (e) {} }
+    cancelBtn.addEventListener('click', function() { clean(); try { onNo && onNo(); } catch(e){} });
+    okBtn.addEventListener('click', function() { clean(); try { onYes && onYes(); } catch(e){} });
 }
 
 // Affichage des formules
@@ -191,8 +229,81 @@ function initQuiz() {
         restartBtn.addEventListener('click', restartQuiz);
     }
     if (formulaInput) {
-        formulaInput.addEventListener('input', handleFormulaInput);
+        attachFormulaHandlers(formulaInput);
+        formulaInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                validateAnswer();
+            }
+        });
     }
+}
+
+// Mapping and helpers for formula input transforms (name -> symbol, ^digits -> superscript)
+const FORMULA_NAME_TO_SYMBOL = {
+    'lambda': 'λ', 'theta': 'θ', 'teta': 'θ', 'delta': 'δ', 'pi': 'π',
+    'sigma': 'σ', 'phi': 'φ', 'rho': 'ρ', 'alpha': 'α', 'beta': 'β',
+    'gamma': 'γ', 'mu': 'μ', 'omega': 'ω'
+};
+const FORMULA_SUP_MAP = { '0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹' };
+
+function formulaReplaceCaretExponents(str) {
+    return str.replace(/\^(\d+)/g, function(_, digits) {
+        return digits.split('').map(d => FORMULA_SUP_MAP[d] || d).join('');
+    });
+}
+
+function formulaReplaceNamesWithSymbols(str) {
+    return str.replace(/\b([a-zA-Z]+)\b/g, function(m) {
+        const low = m.toLowerCase();
+        return FORMULA_NAME_TO_SYMBOL[low] || m;
+    });
+}
+
+// Apply transforms to the formula input element (only for plain text input, not math-field)
+function processFormulaInputTransforms(el) {
+    if (!el) return;
+    try {
+        if (el.tagName === 'MATH-FIELD') return; // don't touch mathfield latex
+        const before = el.value || '';
+        const after = formulaReplaceNamesWithSymbols(formulaReplaceCaretExponents(before));
+        if (after !== before) {
+            const pos = el.selectionStart || 0;
+            el.value = after;
+            try { el.setSelectionRange(pos, pos); } catch (e) {}
+            // visual feedback
+            el.style.transition = 'background 0.18s';
+            const prevBg = el.style.background;
+            el.style.background = 'rgba(76,175,80,0.12)';
+            setTimeout(() => { el.style.background = prevBg; }, 220);
+        }
+    } catch (e) { console.warn('processFormulaInputTransforms error', e); }
+}
+
+// Attach listeners to a formula input element (call when input exists or is recreated)
+function attachFormulaHandlers(inputEl) {
+    if (!inputEl) return;
+    // avoid double-attaching by marking
+    if (inputEl.__formulaHandlersAttached) return;
+    inputEl.__formulaHandlersAttached = true;
+
+    inputEl.addEventListener('input', function(e) {
+        // Only transform in full/formula modes
+        if (quizMode === 'units' || quizMode === 'cours') return;
+        const v = inputEl.value || '';
+        if (v.length > 0 && (/\s$/.test(v) || /\^\d+/.test(v))) {
+            setTimeout(() => processFormulaInputTransforms(inputEl), 0);
+        }
+    });
+
+    inputEl.addEventListener('blur', function() { processFormulaInputTransforms(inputEl); });
+    inputEl.addEventListener('paste', function() { setTimeout(() => processFormulaInputTransforms(inputEl), 0); });
+    inputEl.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            validateAnswer();
+        }
+    });
 }
 
 function startQuiz() {
@@ -211,7 +322,7 @@ function startQuiz() {
         return;
     }
     
-    // 🆕 Choisir la source de données selon le mode
+    // Choisir la source de données selon le mode
     let sourceData = (quizMode === 'cours') ? questionsCoursDataWithConversions : formulesData;
     
     let availableQuestions = sourceData.filter(f => selectedThemes.includes(f.theme));
@@ -234,6 +345,22 @@ function startQuiz() {
         const count = parseInt(quizCount);
         currentQuestions = availableQuestions.slice(0, Math.min(count, availableQuestions.length));
     }
+    
+    // Injecter les questions d'erreurs anciennes si demandé
+    const reviewToggle = document.getElementById('review-errors-toggle');
+    const reviewPercentInput = document.getElementById('review-errors-percent');
+    const firstTheme = selectedThemes[0];
+    if (reviewToggle && reviewToggle.checked) {
+        let pct = 20;
+        if (reviewPercentInput) {
+            const v = parseInt(reviewPercentInput.value);
+            if (!isNaN(v) && v >= 0 && v <= 100) pct = v;
+        }
+        currentQuestions = injectErrorsIntoQuiz(currentQuestions, firstTheme, pct);
+    }
+    
+    // Mélanger à nouveau pour que les questions d'erreurs ne soient pas toutes à la fin
+    currentQuestions = shuffleArray(currentQuestions);
     
     totalQuestions = currentQuestions.length;
     currentQuestionIndex = 0;
@@ -258,22 +385,39 @@ function loadQuestion() {
     document.getElementById('question-counter').textContent = 
         `Question ${currentQuestionIndex + 1} / ${totalQuestions}`;
     
-    document.getElementById('question-text').textContent = question.question;
+    // Afficher le texte de la question ou juste "Formule:" selon le mode
+    let questionHTML = '';
+    if (quizMode === 'units') {
+        // Mode unités uniquement : juste afficher "Formule:"
+        questionHTML = '<strong>Formule:</strong>';
+    } else {
+        // Autres modes : afficher la question complète
+        questionHTML = question.question;
+        if (question.isOldError) {
+            questionHTML += ' <span class="error-badge-in-quiz">Ancienne erreur</span>';
+        }
+    }
+    
+    document.getElementById('question-text').innerHTML = questionHTML;
     
     setFormulaInputValue('');
     document.getElementById('units-table').innerHTML = '';
     document.getElementById('units-table').style.display = 'none';
     
+    // Effacer complètement le feedback précédent
     const feedback = document.getElementById('feedback');
-    feedback.className = '';
-    feedback.removeAttribute('style');
     feedback.innerHTML = '';
+    feedback.className = '';
+    feedback.style.background = '';
+    feedback.style.border = '';
+    feedback.style.borderRadius = '';
+    feedback.style.padding = '';
     
     document.getElementById('next-question').style.display = 'none';
     document.getElementById('validate-answer').style.display = 'inline-block';
     document.getElementById('skip-question').style.display = 'inline-block';
     
-    // 🆕 Adaptation selon le mode
+    // Adaptation selon le mode
     if (quizMode === 'cours') {
         // Mode cours : juste un champ texte
         document.getElementById('formula-input-section').style.display = 'block';
@@ -327,6 +471,19 @@ function displayUnitsTable(question, showFormula, customVariables = null) {
         </div>`;
     }
     
+    // Build table always; only the Variable column content is toggled by the checkbox in full mode
+    const variables = customVariables || (question && question.variables ? question.variables.map(v => v.symbol.replace(/\\/g, '')) : []);
+
+    // Checkbox control only shown in full mode
+    if (!showFormula) {
+        html += `<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;color:#a1a1aa;">
+                <input type="checkbox" id="toggle-show-variables" style="width:1.1rem;height:1.1rem;" />
+                <span style="font-size:0.95rem;">Afficher les variables</span>
+            </label>
+        </div>`;
+    }
+
     html += `
         <table class="units-input-table">
             <thead>
@@ -338,22 +495,200 @@ function displayUnitsTable(question, showFormula, customVariables = null) {
             </thead>
             <tbody>
     `;
-    
-    const variables = customVariables || question.variables.map(v => v.symbol.replace(/\\/g, ''));
-    
+
     variables.forEach(varSymbol => {
+        // variable cell contains both an input (for manual entry) and a text span (for revealed symbol)
         html += `
             <tr>
-                <td><strong>${varSymbol}</strong></td>
+                <td>
+                    <input type="text" class="var-symbol-input" data-var="${varSymbol}" placeholder="Symbole (ex: v)" style="display:block;width:6.5rem;padding:0.25rem;border-radius:4px;border:1px solid #444;background:rgba(37,37,77,0.9);color:#e4e4e7;" />
+                    <span class="var-symbol-text" data-var="${varSymbol}" style="display:none;font-weight:700;">${varSymbol}</span>
+                </td>
                 <td><input type="text" class="var-desc" data-var="${varSymbol}" placeholder="Description"></td>
                 <td><input type="text" class="var-unit" data-var="${varSymbol}" placeholder="Unité"></td>
-            </tr>
-        `;
+            </tr>`;
     });
-    
+
     html += `</tbody></table>`;
-    
+
     unitsTableDiv.innerHTML = html;
+
+    // List inputs created
+    const created = unitsTableDiv.querySelectorAll('.var-symbol-input');
+    
+
+    // Attach checkbox behavior: toggles visibility of variable symbols vs manual input
+    const toggle = document.getElementById('toggle-show-variables');
+    if (toggle) {
+        
+
+        toggle.addEventListener('change', function(ev) {
+            const checked = this.checked;
+            const inputs = unitsTableDiv.querySelectorAll('.var-symbol-input');
+            const texts = unitsTableDiv.querySelectorAll('.var-symbol-text');
+            // Only confirm when turning ON (revealing the variables)
+            if (checked) {
+                ev.preventDefault();
+                // show confirmation
+                showConfirmBox('frro c\'est de la triche un peu, t\'es sûr tu veux afficher les variables?', function() {
+                    // Yes: keep checked and reveal symbols
+                    try { toggle.checked = true; } catch(e) {}
+                    inputs.forEach(i => { i.style.display = 'none'; });
+                    texts.forEach(s => { s.style.display = 'inline'; });
+                }, function() {
+                    // No: uncheck and keep inputs visible
+                    try { toggle.checked = false; } catch(e) {}
+                    inputs.forEach(i => { i.style.display = 'block'; });
+                    texts.forEach(s => { s.style.display = 'none'; });
+                }, { noText: 'nn wlh pardon', yesText: 'oui je suis un tricheur monocouille' });
+            } else {
+                // turning off: hide symbols, show inputs
+                inputs.forEach(i => { i.style.display = 'block'; });
+                texts.forEach(s => { s.style.display = 'none'; });
+            }
+        });
+    }
+    
+    // Helper: map written names to symbols (expanded)
+    const NAME_TO_SYMBOL = {
+        'lambda': 'λ',
+        'theta': 'θ',
+        'teta': 'θ',
+        'delta': 'δ',
+        'pi': 'π',
+        'sigma': 'σ',
+        'phi': 'φ',
+        'rho': 'ρ',
+        'alpha': 'α',
+        'beta': 'β',
+        'gamma': 'γ',
+        'mu': 'μ',
+        'omega': 'ω'
+    };
+
+    const SUP_MAP = { '0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹' };
+
+    function replaceCaretExponents(str) {
+        // Replace sequences like ^2 or ^23 with superscript characters
+        const result = str.replace(/\^(\d+)/g, function(_, digits) {
+            return digits.split('').map(d => SUP_MAP[d] || d).join('');
+        });
+        // silent transform
+        if (result !== str) { /* replaced caret exponents */ }
+        return result;
+    }
+
+    function replaceNamesWithSymbols(str) {
+        // Replace full words only (case-insensitive)
+        const result = str.replace(/\b([a-zA-Z]+)\b/g, function(m) {
+            const low = m.toLowerCase();
+            const replacement = NAME_TO_SYMBOL[low] || m;
+            return replacement;
+        });
+        if (result !== str) { /* replaced names with symbols */ }
+        return result;
+    }
+
+    function processVarInputEl(el) {
+        if (!el) return;
+
+        function doTransforms() {
+            let v = el.value || '';
+            const newV = replaceNamesWithSymbols(replaceCaretExponents(v));
+            if (newV !== v) {
+                const selStart = el.selectionStart;
+                const selEnd = el.selectionEnd;
+                el.value = newV;
+                // try to keep cursor near previous position
+                try {
+                    el.setSelectionRange(selStart, selEnd);
+                } catch (e) {}
+            }
+        }
+
+        // On blur: apply transforms
+        el.addEventListener('blur', function() { doTransforms(); });
+
+        // On input: if the last char is a space OR if we detect a caret exponent pattern, apply transforms
+        el.addEventListener('input', function(e) {
+            const v = el.value || '';
+            if (v.length > 0 && (/\s$/.test(v) || /\^\d+/.test(v))) {
+                setTimeout(doTransforms, 0);
+            }
+        });
+
+        // On keydown: when the user presses space, Enter or Tab, apply transforms after insertion
+        el.addEventListener('keydown', function(e) {
+            if (e.key === ' ' || e.key === 'Enter' || e.key === 'Tab') {
+                setTimeout(doTransforms, 0);
+            }
+        });
+
+        // On paste: process after paste
+        el.addEventListener('paste', function() { setTimeout(doTransforms, 0); });
+    }
+
+    // Debounce timers per element
+    const debounceMap = new WeakMap();
+    unitsTableDiv.addEventListener('input', function(e) {
+        const el = e.target;
+        if (!el || !el.classList || !el.classList.contains('var-symbol-input')) return;
+
+        // Always schedule a transform shortly after input (debounced)
+        if (debounceMap.has(el)) clearTimeout(debounceMap.get(el));
+        const t = setTimeout(() => {
+            const before = el.value || '';
+            const transformed = replaceNamesWithSymbols(replaceCaretExponents(before));
+            if (transformed !== before) {
+                const pos = el.selectionStart;
+                el.value = transformed;
+                try { el.setSelectionRange(pos, pos); } catch (e) {}
+                // small visual flash to indicate change
+                el.style.transition = 'background 0.18s';
+                const prevBg = el.style.background;
+                el.style.background = 'rgba(76,175,80,0.12)';
+                setTimeout(() => { el.style.background = prevBg; }, 220);
+                // transformed
+            }
+        }, 80);
+        debounceMap.set(el, t);
+    });
+
+    unitsTableDiv.addEventListener('keydown', function(e) {
+        const el = e.target;
+        if (!el || !el.classList || !el.classList.contains('var-symbol-input')) return;
+        if (e.key === ' ' || e.key === 'Enter' || e.key === 'Tab') {
+            setTimeout(() => {
+                const before = el.value || '';
+                const transformed = replaceNamesWithSymbols(replaceCaretExponents(before));
+                if (transformed !== before) {
+                    const pos = el.selectionStart;
+                    el.value = transformed;
+                    try { el.setSelectionRange(pos, pos); } catch (e) {}
+                }
+            }, 0);
+        }
+    });
+
+    unitsTableDiv.addEventListener('blur', function(e) {
+        const el = e.target;
+        if (!el || !el.classList || !el.classList.contains('var-symbol-input')) return;
+        const before = el.value || '';
+        const transformed = replaceNamesWithSymbols(replaceCaretExponents(before));
+        if (transformed !== before) {
+            el.value = transformed;
+        }
+    }, true);
+
+    unitsTableDiv.addEventListener('paste', function(e) {
+        const el = e.target;
+        if (!el || !el.classList || !el.classList.contains('var-symbol-input')) return;
+        setTimeout(() => {
+            const before = el.value || '';
+            const transformed = replaceNamesWithSymbols(replaceCaretExponents(before));
+            if (transformed !== before) el.value = transformed;
+        }, 0);
+    });
     
     setTimeout(() => {
         if (window.MathJax) {
@@ -381,8 +716,16 @@ function buildVariablesHTML(question) {
     return html;
 }
 
-function validateAnswer() {
+function validateAnswer(skipEmptyCheck = false, showSelfEval = true) {
     console.log('Affichage de la correction');
+
+    const userFormula = getFormulaInputValue().trim();
+    
+    // Vérifier que la formule n'est pas vide (sauf pour le mode cours et unités)
+    if (!userFormula && quizMode !== 'units' && quizMode !== 'cours' && !skipEmptyCheck) {
+        alert('Veuillez entrer une formule avant de valider!');
+        return;
+    }
 
     const question = currentQuestions[currentQuestionIndex];
     const feedback = document.getElementById('feedback');
@@ -406,8 +749,6 @@ function validateAnswer() {
         feedbackHTML += '</div>';
 
     } else {
-        const userFormula = getFormulaInputValue().trim();
-
         if (quizMode !== 'units' && userFormula) {
             feedbackHTML += '<div style="margin-bottom: 1rem;">';
             feedbackHTML += '<strong style="color: #a1a1aa;">Votre reponse :</strong>';
@@ -425,11 +766,13 @@ function validateAnswer() {
         feedbackHTML += '</div>';
     }
 
-    feedbackHTML += '<div class="self-eval-container">';
-    feedbackHTML += '<button class="self-eval-btn full" onclick="recordScore(1)">1 point</button>';
-    feedbackHTML += '<button class="self-eval-btn half" onclick="recordScore(0.5)">0.5 point</button>';
-    feedbackHTML += '<button class="self-eval-btn zero" onclick="recordScore(0)">0 point</button>';
-    feedbackHTML += '</div>';
+    if (showSelfEval) {
+        feedbackHTML += '<div class="self-eval-container">';
+        feedbackHTML += '<button class="self-eval-btn full" onclick="recordScore(1)">1 point</button>';
+        feedbackHTML += '<button class="self-eval-btn half" onclick="recordScore(0.5)">0.5 point</button>';
+        feedbackHTML += '<button class="self-eval-btn zero" onclick="recordScore(0)">0 point</button>';
+        feedbackHTML += '</div>';
+    }
 
     feedback.className = 'show';
     feedback.style.background = 'rgba(108, 99, 255, 0.05)';
@@ -440,7 +783,19 @@ function validateAnswer() {
 
     document.getElementById('validate-answer').style.display = 'none';
     document.getElementById('skip-question').style.display = 'none';
-    document.getElementById('next-question').style.display = 'none';
+    // Show the "Suivant" button if self-eval is hidden (e.g. after "Passer")
+    if (showSelfEval) {
+        document.getElementById('next-question').style.display = 'none';
+    } else {
+        const nextBtnEl = document.getElementById('next-question');
+        if (nextBtnEl) {
+            nextBtnEl.style.display = 'inline-block';
+            nextBtnEl.classList.add('btn-primary');
+            nextBtnEl.classList.remove('btn-secondary');
+            // Ensure label is user-friendly
+            try { nextBtnEl.textContent = 'Suivant'; } catch (e) {}
+        }
+    }
 
     setTimeout(() => {
         if (window.MathJax) {
@@ -450,8 +805,26 @@ function validateAnswer() {
 }
 
 function recordScore(points) {
+    const question = currentQuestions[currentQuestionIndex];
+    if (question) {
+        // Enregistrer le score localement sur l'objet question pour le session summary
+        question.userScore = points;
+        question.isCorrect = (points === 1);
+
+        if (points < 1) {
+            // Enregistrer une erreur si la réponse est incorrecte, sauf si déjà enregistrée via "passer"
+            if (!question._skipRecorded) {
+                recordQuestionError(question.id, question, quizMode || 'formules');
+            }
+        } else if (question.isOldError && points === 1) {
+            // Si c'était une ancienne erreur et on l'a réussie, marquer le succès
+            recordErrorSuccess(question.id);
+        }
+    }
+
     score += points;
     console.log('Score +' + points + ' | Total: ' + score);
+
     currentQuestionIndex++;
     loadQuestion();
 }
@@ -460,38 +833,33 @@ function recordScore(points) {
 
 
 function skipQuestion() {
+    // Marquer la question comme passée (0 point), enregistrer l'erreur, puis afficher la correction
     const question = currentQuestions[currentQuestionIndex];
-    const feedback = document.getElementById('feedback');
-
-    let feedbackHTML = '<strong style="color: #f44336;">Question passee</strong><br><br>';
-
-    if (quizMode === 'cours') {
-        feedbackHTML += '<strong style="color: #4caf50;">Reponse attendue :</strong>';
-        feedbackHTML += '<div class="correction-box">';
-        feedbackHTML += '<code style="color: #e4e4e7;">' + escapeHtml(question.reponse) + '</code>';
-        feedbackHTML += '</div>';
-    } else {
-        feedbackHTML += '<strong style="color: #4caf50;">Formule correcte :</strong>';
-        feedbackHTML += '<div class="correction-box">$$' + question.formula + '$$</div>';
-        feedbackHTML += buildVariablesHTML(question);
+    if (question) {
+        question.userScore = 0;
+        question.isCorrect = false;
+        // Mark to avoid double-recording when user later presses a self-eval button
+        question._skipRecorded = true;
+        // Record the error now
+        recordQuestionError(question.id, question, quizMode || 'formules');
     }
-
-    feedback.className = 'show';
-    feedback.style.background = 'rgba(244, 67, 54, 0.05)';
-    feedback.style.border = '1px solid rgba(244, 67, 54, 0.2)';
-    feedback.style.borderRadius = '8px';
-    feedback.style.padding = '1.5rem';
-    feedback.innerHTML = feedbackHTML;
-
-    document.getElementById('validate-answer').style.display = 'none';
-    document.getElementById('skip-question').style.display = 'none';
-    document.getElementById('next-question').style.display = 'inline-block';
-
-    setTimeout(() => {
-        if (window.MathJax) {
-            MathJax.typesetPromise([feedback]);
+    // Show correction even if input is empty, but hide self-eval buttons when skipping
+    validateAnswer(true, false);
+    // Ensure the next button is visible and self-eval controls hidden (robust fallback)
+    try {
+        const nextBtnEl = document.getElementById('next-question');
+        if (nextBtnEl) {
+            nextBtnEl.style.display = 'inline-block';
+            nextBtnEl.classList.add('btn-primary');
+            nextBtnEl.classList.remove('btn-secondary');
+            nextBtnEl.textContent = 'Suivant';
         }
-    }, 100);
+        const feedback = document.getElementById('feedback');
+        if (feedback) {
+            const evalBox = feedback.querySelector('.self-eval-container');
+            if (evalBox) evalBox.style.display = 'none';
+        }
+    } catch (e) {}
 }
 
 // 🆕 Fonction de validation des réponses de cours
@@ -628,12 +996,16 @@ function showResults() {
     document.getElementById('score-text').innerHTML =
         'Score : ' + score + ' / ' + totalQuestions + ' (' + percentage + '%)<br><br>' +
         message;
+    
+    // Enregistrer la session de quiz
+    const selectedThemesArray = Array.from(document.querySelectorAll('.theme-checkbox:checked'))
+        .map(cb => cb.value);
+
+    saveQuizSession(selectedThemesArray.length ? selectedThemesArray : ['mixed'], score, totalQuestions, currentQuestions);
 }
 
 function quitQuiz() {
-    if (confirm('Voulez-vous vraiment quitter le quiz ?')) {
-        resetQuiz();
-    }
+    showConfirmBox('Voulez-vous vraiment quitter le quiz ?', function() { resetQuiz(); }, function() {});
 }
 
 function restartQuiz() {
@@ -974,3 +1346,585 @@ function hideTip() {
 function escapeHtml(str) {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ======================================
+// GESTION DU MODE MATH (LaTeX)
+// ======================================
+
+let isMathModeActive = false;
+
+function initMathModeToggle() {
+    const toggleBtn = document.getElementById('toggle-math-mode');
+    if (!toggleBtn) return;
+    
+    toggleBtn.addEventListener('click', function() {
+        const input = document.getElementById('formula-input');
+        isMathModeActive = !isMathModeActive;
+        
+        if (isMathModeActive) {
+            // Passer en mode Math (MathLive)
+            const currentValue = input.value;
+            const section = document.getElementById('formula-input-section');
+            
+            section.innerHTML = '';
+            
+            const container = document.createElement('div');
+            container.style.cssText = 'display: flex; gap: 0.5rem; align-items: flex-start;';
+            
+            const mathField = document.createElement('math-field');
+            mathField.id = 'formula-input';
+            mathField.style.cssText = 'flex: 1; border: 1px solid #444; padding: 0.5rem; border-radius: 4px; min-height: 40px; background: rgba(255,255,255,0.03);';
+            
+            container.appendChild(mathField);
+            
+            // Restaurer la valeur
+            if (currentValue) {
+                if (mathField.setValue) {
+                    mathField.setValue(currentValue, 'latex');
+                }
+            }
+            
+            // Ajouter le bouton retour
+            const backBtn = document.createElement('button');
+            backBtn.id = 'toggle-math-mode';
+            backBtn.textContent = 'Texte';
+            backBtn.style.cssText = 'padding: 0.6rem 0.8rem; background: #333; color: #a1a1aa; border: 1px solid #444; border-radius: 4px; cursor: pointer; font-size: 0.8rem; white-space: nowrap; transition: all 0.2s;';
+            
+            container.appendChild(backBtn);
+            section.appendChild(container);
+            
+            // Réattacher l'event listener au nouveau bouton
+            backBtn.addEventListener('click', initMathModeToggle);
+            
+            toggleBtn.style.display = 'none';
+            
+            // Charger MathLive si nécessaire
+            setTimeout(() => {
+                if (window.MathJax) {
+                    MathJax.typesetPromise();
+                }
+            }, 100);
+        } else {
+            // Revenir en mode Texte Simple
+            const currentValue = getFormulaInputValue();
+            const section = document.getElementById('formula-input-section');
+            
+            section.innerHTML = '';
+            
+            const container = document.createElement('div');
+            container.style.cssText = 'display: flex; gap: 0.5rem; align-items: flex-start;';
+            
+            const textInput = document.createElement('input');
+            textInput.type = 'text';
+            textInput.id = 'formula-input';
+            textInput.placeholder = 'Entrez votre réponse...';
+            textInput.style.cssText = 'flex: 1; padding: 0.6rem; border-radius: 6px; border: 1px solid #444; background: rgba(37,37,77,0.9); color: #e4e4e7; font-size: 1rem;';
+            textInput.value = currentValue;
+            
+            container.appendChild(textInput);
+            // Attach handlers (transforms, Enter key, paste, blur)
+            attachFormulaHandlers(textInput);
+            
+            // Ajouter le bouton toggle
+            const mathBtn = document.createElement('button');
+            mathBtn.id = 'toggle-math-mode';
+            mathBtn.textContent = 'Math';
+            mathBtn.style.cssText = 'padding: 0.6rem 0.8rem; background: #333; color: #a1a1aa; border: 1px solid #444; border-radius: 4px; cursor: pointer; font-size: 0.8rem; white-space: nowrap; transition: all 0.2s;';
+            
+            container.appendChild(mathBtn);
+            section.appendChild(container);
+            
+            const small = document.createElement('small');
+            small.style.cssText = 'color: #a1a1aa; display: block; margin-top: 0.5rem;';
+            small.textContent = 'Cliquez sur "Math" pour accéder à l\'éditeur LaTeX avancé';
+            section.appendChild(small);
+            
+            // Réattacher l'event listener
+            mathBtn.addEventListener('click', initMathModeToggle);
+        }
+    });
+}
+
+// ======================================
+// SYSTEME DE STATISTIQUES ET REVISION ESPACEE
+// ======================================
+
+// Charger les stats depuis localStorage
+function loadStats() {
+    const stored = localStorage.getItem('quizStats');
+    if (!stored) {
+        return {
+            sessions: [],
+            errors: {},
+            totalQuestions: 0,
+            totalCorrect: 0
+        };
+    }
+    return JSON.parse(stored);
+}
+
+// Sauvegarder les stats dans localStorage
+function saveStats(stats) {
+    localStorage.setItem('quizStats', JSON.stringify(stats));
+}
+
+// Enregistrer les erreurs de questions (répétition espacée)
+function recordQuestionError(questionId, questionData, themeId) {
+    const stats = loadStats();
+    if (!stats.errors) stats.errors = {};
+    
+    const errorKey = questionId.toString();
+    if (!stats.errors[errorKey]) {
+        stats.errors[errorKey] = {
+            questionId: questionId,
+            questionText: questionData.question || 'Sans titre',
+            theme: themeId,
+            failCount: 0,
+            successCount: 0,
+            lastFail: null,
+            nextReview: null
+        };
+    }
+    
+    stats.errors[errorKey].failCount++;
+    stats.errors[errorKey].lastFail = new Date().getTime();
+    // Prochaine révision dans 1 jour (86400000 ms)
+    stats.errors[errorKey].nextReview = new Date().getTime() + 86400000;
+    
+    saveStats(stats);
+}
+
+// Obtenir les questions à réviser (erreurs anciennes)
+function getErrorsToReview() {
+    const stats = loadStats();
+    const now = new Date().getTime();
+    const errors = [];
+    
+    for (let key in stats.errors) {
+        if (stats.errors[key].nextReview <= now || !stats.errors[key].nextReview) {
+            errors.push({ ...stats.errors[key], id: key });
+        }
+    }
+    
+    return errors;
+}
+
+// Marquer une erreur comme réussie
+function recordErrorSuccess(questionId) {
+    const stats = loadStats();
+    const errorKey = questionId.toString();
+    
+    if (stats.errors && stats.errors[errorKey]) {
+        stats.errors[errorKey].successCount++;
+        // Si 3 succès, on supprime l'erreur
+        if (stats.errors[errorKey].successCount >= 3) {
+            delete stats.errors[errorKey];
+        } else {
+            // Sinon, prochaine révision dans 2-3 jours
+            stats.errors[errorKey].nextReview = new Date().getTime() + (2 + Math.random()) * 86400000;
+        }
+    }
+    
+    saveStats(stats);
+}
+
+// Enregistrer un résultat de quiz complet
+function saveQuizSession(themeId, score, totalQuestions, questionsData) {
+    const stats = loadStats();
+
+    // Accept either an array of themes or a comma-separated string
+    let themesArr = [];
+    if (Array.isArray(themeId)) {
+        themesArr = themeId.slice();
+    } else if (typeof themeId === 'string') {
+        themesArr = themeId.split(',').map(s => s.trim()).filter(s => s.length > 0);
+    }
+    if (themesArr.length === 0) themesArr = ['mixed'];
+
+    const session = {
+        date: new Date().getTime(),
+        dateStr: new Date().toLocaleDateString('fr-FR'),
+        theme: themesArr.join(', '), // legacy string for older code
+        themes: themesArr, // canonical array form
+        score: score,
+        totalQuestions: totalQuestions,
+        rate: Math.round((score / totalQuestions) * 100)
+    };
+
+    // Construire un breakdown par thème à partir des questions du quiz (plus précis)
+    const breakdown = {};
+    if (questionsData && Array.isArray(questionsData)) {
+        questionsData.forEach(q => {
+            const t = q.theme || (Array.isArray(themesArr) && themesArr[0]) || 'mixed';
+            if (!breakdown[t]) breakdown[t] = { total: 0, correct: 0 };
+            breakdown[t].total += 1;
+            if (q.userScore !== undefined) {
+                if (q.userScore === 1) breakdown[t].correct += 1;
+            }
+        });
+    }
+
+    session.themeBreakdown = breakdown;
+
+    if (!stats.sessions) stats.sessions = [];
+    stats.sessions.push(session);
+
+    stats.totalQuestions = (stats.totalQuestions || 0) + totalQuestions;
+    stats.totalCorrect = (stats.totalCorrect || 0) + score;
+
+    // Enregistrer les erreurs (utiliser theme array pour recordQuestionError)
+    if (questionsData && Array.isArray(questionsData)) {
+        questionsData.forEach((q, idx) => {
+            if (q.result !== undefined && q.result < 1) {
+                // Pass the first theme as themeId for error record (keeps previous behavior)
+                recordQuestionError(q.id, q, themesArr[0] || 'mixed');
+            }
+        });
+    }
+
+    saveStats(stats);
+}
+
+// Afficher les statistiques
+function renderStats() {
+    const stats = loadStats();
+    
+    // Stat cards
+    const totalQuizzes = (stats.sessions || []).length;
+    const totalQuestions = stats.totalQuestions || 0;
+    const totalCorrect = stats.totalCorrect || 0;
+    const globalRate = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
+    const errorCount = Object.keys(stats.errors || {}).length;
+    
+    document.getElementById('stat-total-quizzes').textContent = totalQuizzes;
+    document.getElementById('stat-total-questions').textContent = totalQuestions;
+    document.getElementById('stat-global-rate').textContent = globalRate + '%';
+    document.getElementById('stat-errors-pending').textContent = errorCount;
+    
+    // Graphique évolution
+    renderEvolutionChart(stats);
+    
+    // Graphique par thème
+    renderThemeChart(stats);
+    
+    // Tableau par thème
+    renderThemeTable(stats);
+    
+    // Liste des erreurs à réviser
+    renderErrorsList();
+    
+    // Historique
+    renderHistory(stats);
+}
+
+// Graphique d'évolution du taux de réussite
+function renderEvolutionChart(stats) {
+    const canvas = document.getElementById('chart-evolution');
+    if (!canvas) return;
+    
+    const sessions = (stats.sessions || []).slice(-10); // Derniers 10 quiz
+    
+    const labels = sessions.map(s => s.dateStr);
+    const data = sessions.map(s => s.rate);
+    
+    if (window.evolutionChart) {
+        window.evolutionChart.destroy();
+    }
+    
+    window.evolutionChart = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Taux de réussite (%)',
+                data: data,
+                borderColor: '#6c63ff',
+                backgroundColor: 'rgba(108, 99, 255, 0.1)',
+                tension: 0.3,
+                fill: true,
+                pointRadius: 5,
+                pointBackgroundColor: '#6c63ff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: { color: '#e4e4e7' }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: { color: '#a1a1aa' },
+                    grid: { color: 'rgba(255,255,255,0.05)' }
+                },
+                x: {
+                    ticks: { color: '#a1a1aa' },
+                    grid: { color: 'rgba(255,255,255,0.05)' }
+                }
+            }
+        }
+    });
+}
+
+// Graphique taux de réussite par thème
+function renderThemeChart(stats) {
+    const canvas = document.getElementById('chart-by-theme');
+    if (!canvas) return;
+
+    // Prefer aggregating from per-session breakdowns (accurate by question).
+    const themeMap = {};
+    (stats.sessions || []).forEach(session => {
+        if (session.themeBreakdown && Object.keys(session.themeBreakdown).length) {
+            for (const t in session.themeBreakdown) {
+                if (!themeMap[t]) themeMap[t] = { total: 0, correct: 0 };
+                themeMap[t].total += session.themeBreakdown[t].total || 0;
+                themeMap[t].correct += session.themeBreakdown[t].correct || 0;
+            }
+        } else {
+            // Fallback: try to infer from session.themes/session.theme (evenly split)
+            let themes = [];
+            if (Array.isArray(session.themes) && session.themes.length) themes = session.themes.slice();
+            else if (typeof session.theme === 'string' && session.theme.trim().length) {
+                themes = session.theme.split(',').map(s => s.trim()).filter(s => s.length > 0);
+            }
+            if (themes.length === 0) themes = ['mixed'];
+            const n = themes.length;
+            const perTotal = (session.totalQuestions || 0) / n;
+            const perCorrect = (session.score || 0) / n;
+            themes.forEach(t => {
+                if (!themeMap[t]) themeMap[t] = { total: 0, correct: 0 };
+                themeMap[t].total += perTotal;
+                themeMap[t].correct += perCorrect;
+            });
+        }
+    });
+
+    const labels = Object.keys(themeMap);
+    const data = labels.map(theme => {
+        const t = themeMap[theme];
+        return t.total > 0 ? Math.round((t.correct / t.total) * 100) : 0;
+    });
+
+    const colors = [
+        '#6c63ff', '#ff6b9d', '#00d4ff', '#ffa500', '#4ade80',
+        '#f43f5e', '#06b6d4', '#eab308', '#ec4899', '#8b5cf6'
+    ];
+
+    if (window.themeChart) {
+        window.themeChart.destroy();
+    }
+
+    window.themeChart = new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: colors.slice(0, labels.length),
+                borderColor: '#1e1e2e'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: { color: '#e4e4e7' }
+                }
+            }
+        }
+    });
+}
+
+// Tableau détail par thème
+function renderThemeTable(stats) {
+    // Per user request: remove detailed per-theme table. Clear the container.
+    const container = document.getElementById('theme-stats-table');
+    if (!container) return;
+    container.innerHTML = '';
+}
+
+// Afficher les erreurs à réviser
+function renderErrorsList() {
+    const container = document.getElementById('errors-list');
+    if (!container) return;
+    
+    const stats = loadStats();
+    const errors = Object.keys(stats.errors || {}).map(key => ({
+        ...stats.errors[key],
+        id: key
+    }));
+    
+    if (errors.length === 0) {
+        container.innerHTML = '<p style="color:#a1a1aa;">Aucune erreur à réviser pour le moment. Continuez vos quiz!</p>';
+        return;
+    }
+    
+    let html = '<div class="errors-grid">';
+    
+    errors.forEach(error => {
+        html += `
+            <div class="error-card">
+                <div class="error-header">
+                    <span class="error-badge">Ancienne erreur</span>
+                    <span class="error-theme">${error.theme}</span>
+                    <span class="error-count" style="margin-left:auto;background:#2b2b3d;color:#fff;padding:0.2rem 0.5rem;border-radius:6px;font-size:0.85rem;">Échecs: ${error.failCount}</span>
+                </div>
+                <p class="error-question">${escapeHtml(error.questionText)}</p>
+                <div class="error-stats">
+                    <span>Succès: ${error.successCount}</span>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+// Afficher l'historique
+function renderHistory(stats) {
+    const container = document.getElementById('history-list');
+    if (!container) return;
+    
+    const sessions = (stats.sessions || []).slice().reverse().slice(0, 10);
+    
+    if (sessions.length === 0) {
+        container.innerHTML = '<p style="color:#a1a1aa;">Aucune session enregistrée.</p>';
+        return;
+    }
+    
+    let html = '<div class="history-list">';
+    
+    sessions.forEach(session => {
+        html += `
+            <div class="history-item">
+                <div class="history-date">${session.dateStr}</div>
+                <div class="history-theme">${session.theme}</div>
+                <div class="history-result">${session.score}/${session.totalQuestions}</div>
+                <div class="history-rate"><strong>${session.rate}%</strong></div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+// Injecter des questions d'erreurs anciennes dans un quiz
+function injectErrorsIntoQuiz(currentQuestions, theme, percent=20) {
+    const errors = getErrorsToReview();
+    const errorQuestions = errors.filter(e => e.theme === theme || !theme);
+
+    if (errorQuestions.length === 0 || percent <= 0) return currentQuestions;
+
+    // Injecter un pourcentage configurable des questions (par défaut 20%)
+    const desiredCount = Math.ceil(currentQuestions.length * (percent / 100));
+    const toInject = errorQuestions.slice(0, Math.min(desiredCount, errorQuestions.length));
+
+    toInject.forEach(error => {
+        const originalQuestion = formulesData.find(q => q.id == error.questionId);
+        if (originalQuestion) {
+            const injectedQuestion = {
+                ...originalQuestion,
+                isOldError: true,
+                errorData: error
+            };
+            currentQuestions.push(injectedQuestion);
+        }
+    });
+
+    return currentQuestions;
+}
+
+// Afficher un badge pour les questions d'erreur
+function getQuestionBadge(question) {
+    if (question.isOldError) {
+        return '<span class="error-badge-in-quiz">Ancienne erreur</span>';
+    }
+    return '';
+}
+
+// Initialiser le système de stats
+function initStats() {
+    const statsTab = document.getElementById('stats');
+    if (!statsTab) return;
+    
+    // Bouton pour afficher/cacher la liste des erreurs (ne supprime rien)
+    const toggleErrorsBtn = document.getElementById('toggle-errors');
+    const errorsListDiv = document.getElementById('errors-list');
+    if (toggleErrorsBtn && errorsListDiv) {
+        toggleErrorsBtn.addEventListener('click', function() {
+            if (errorsListDiv.style.display === 'none' || !errorsListDiv.style.display) {
+                // Show and render errors
+                renderErrorsList();
+                errorsListDiv.style.display = 'block';
+                this.textContent = 'Masquer les erreurs';
+            } else {
+                errorsListDiv.style.display = 'none';
+                this.textContent = 'Afficher les erreurs';
+            }
+        });
+    }
+    
+    // Afficher les stats au chargement
+    renderStats();
+
+    // Gestion suppression des données (select + bouton en bas de la page)
+    const deleteBtn = document.getElementById('delete-data-btn');
+    const deleteSelect = document.getElementById('delete-data-select');
+    if (deleteBtn && deleteSelect) {
+        deleteBtn.addEventListener('click', function() {
+            const choice = deleteSelect.value;
+            const stats = loadStats();
+            if (choice === 'sessions') {
+                showConfirmBox('Supprimer toutes les sessions (historique) ?', function() {
+                    stats.sessions = [];
+                    stats.totalQuestions = 0;
+                    stats.totalCorrect = 0;
+                    saveStats(stats);
+                    renderStats();
+                    alert('Suppression effectuée.');
+                }, function() {});
+                return;
+            } else if (choice === 'errors') {
+                showConfirmBox('Supprimer toutes les erreurs enregistrées ?', function() {
+                    stats.errors = {};
+                    saveStats(stats);
+                    renderStats();
+                    alert('Suppression effectuée.');
+                }, function() {});
+                return;
+            } else if (choice === 'all') {
+                showConfirmBox('Réinitialiser toutes les statistiques (sessions + erreurs) ?', function() {
+                    stats.sessions = [];
+                    stats.errors = {};
+                    stats.totalQuestions = 0;
+                    stats.totalCorrect = 0;
+                    saveStats(stats);
+                    renderStats();
+                    alert('Suppression effectuée.');
+                }, function() {});
+                return;
+            }
+        });
+    }
+}
+
+// Écouter les changements d'onglets pour afficher les stats
+document.addEventListener('DOMContentLoaded', function() {
+    const statsBtn = document.querySelector('[data-tab="stats"]');
+    if (statsBtn) {
+        statsBtn.addEventListener('click', function() {
+            setTimeout(() => renderStats(), 100);
+        });
+    }
+    
+    initStats();
+});

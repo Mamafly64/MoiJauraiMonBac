@@ -464,6 +464,29 @@ const formulesData = [
             { symbol: "E_p", name: "Énergie potentielle", unit: "Joules (J)" }
         ]
     }
+    ,
+    // ===== Nouvelles formules ajoutées : intensité sonore et [H3O+] depuis pH =====
+    {
+        id: 41,
+        theme: "ondes",
+        formula: "I = I_0 \\times 10^{L/10}",
+        question: "Donner la relation permettant de calculer l'intensité acoustique I à partir du niveau sonore L (dB). Préciser l'unité et la valeur de référence.",
+        variables: [
+            { symbol: "I", name: "Intensité acoustique", unit: "W/m²" },
+            { symbol: "I_0", name: "Intensité de référence (seuil d'audition)", unit: "W/m² (1×10⁻¹² W/m²)" },
+            { symbol: "L", name: "Niveau sonore", unit: "décibels (dB)" }
+        ]
+    },
+    {
+        id: 42,
+        theme: "chimie",
+        formula: "[H_3O^+] = 10^{-pH}",
+        question: "Donner la relation permettant de calculer la concentration des ions oxonium [H3O+] à partir du pH. Préciser l'unité.",
+        variables: [
+            { symbol: "[H_3O^+]", name: "Concentration en ions oxonium (hydronium)", unit: "mol/L" },
+            { symbol: "pH", name: "Potentiel Hydrogène", unit: "sans unité" }
+        ]
+    }
 ];
 
 
